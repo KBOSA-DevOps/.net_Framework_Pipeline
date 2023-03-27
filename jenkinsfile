@@ -1,0 +1,64 @@
+
+pipeline {
+    agent {
+        label 'windows'
+    }
+    environment {
+        msbuild = 'C:\\Program Files\\Microsoft Visual Studio\\2022\Community\\MSBuild\\Current\\Bin\\MSBuild.exe'
+        credentialsId = '11d72f24-cc66-4694-b895-558bee6c03c0'
+        solutionName = 'ThermoKing.sln'
+        url = 'https://dtalm.visualstudio.com/DUY%20Self%20Service/_git/Themorking'
+        prod_publishLocation = '\\\\DTEKCMDBMICRO\\jenkins2'
+        test_publishLocation = '\\\\DTEKCMDBMICRO\\test.jenkins'
+        sitename = 'jenkins_framework'
+        test_sitename = 'test.jenkins_framework'
+    }
+    stages {
+        stage('Checkout Stage') {
+            steps {
+                echo "${env.BRANCH_NAME}"
+                git credentialsId: "${env.credentialsId}", url: "${env.url}", branch: "${env.BRANCH_NAME}"
+            }
+        }
+        stage('Dev Stage') {
+                steps {
+                    script {
+                        echo "${sitename}"
+                        echo "${test_sitename}"
+                        if (env.BRANCH_NAME == 'dev') {
+                        echo 'Dev Stage is starting...%%'
+                        bat "powershell -Command 'Stop-Website -Name \"${test_sitename}\"'" 
+                        bat "msbuild \"%WORKSPACE%\\${env.solutionName}\" /P:Configuration=Release /P:OutputPath=\"${test_publishLocation}\""
+                        bat "powershell -Command 'Start-Website -Name \"${test_sitename}\"'" 
+                        echo 'Dev Stage is completed successfully.'
+                        }
+                    }
+                }
+        }
+        stage('Prod Stage') {
+                steps {
+                    script {
+                        if (env.BRANCH_NAME == 'master') {
+                        echo 'Main Stage is starting...%%'
+                        timeout(time: 1, unit: 'MINUTES') {
+                                    input message: 'Do you want to approve the deployment?', ok: 'Yes'
+                        }
+                        timeout(time: 1, unit: 'MINUTES'){
+                            
+                            copyArtifacts(projectName: 'previous-build-job-name',
+                                     filter: 'output/*',
+                                     fingerprintArtifacts: true,
+                                     flatten: true,
+                                     target: "${prod_publishLocation}/previous-build")
+
+                            bat "powershell -Command 'Stop-Website -Name \"${sitename}\"'" 
+                            bat "msbuild \"%WORKSPACE%\\${env.solutionName}\" /P:Configuration=Release /P:OutputPath=\"${prod_publishLocation}\""
+                            bat "powershell -Command 'Start-Website -Name \"${sitename}\"'" 
+                        }
+                        echo 'Main Stage is completed successfully.'
+                        }
+                    }
+                }
+        }
+    }
+}
